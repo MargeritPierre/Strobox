@@ -24,8 +24,9 @@ videoObject.playsInline = true;
 const videoConstraints = {
     video: {
         width: { ideal: 4096 },
-        height: { ideal: 2160 } 
+        height: { ideal: 2160 }, 
         // width: 1024,//height: 720,
+        facingMode: "environment" // try to use rear camera on mobile devices
     },
     // width: 1024,
 }
