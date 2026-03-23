@@ -23,9 +23,8 @@ videoObject.playsInline = true;
 // Get video sources
 const videoConstraints = {
     video: {
-        width: { ideal: 4096 },
-        height: { ideal: 2160 }, 
-        // width: 1024,//height: 720,
+        // width: { ideal: 4096 }, height: { ideal: 2160 }, 
+        width: { ideal: 640 },//height: 720,
         facingMode: "environment" // try to use rear camera on mobile devices
     },
     // width: 1024,
@@ -194,6 +193,11 @@ function setVideoFrame(dst) {
 // DIC SETUP
 // ----------------------------------------------------------------------
 
+PARAMS.DIC = {
+    subsetSize: 25,
+    detHessBias: -15,
+}
+
 // Current Image
 const [currentTexture, currentImage] = videoFrame()
 // // const currentTexture = await videoFrame()
@@ -227,15 +231,14 @@ const clrGradImage = vec2rgb(gradImage);
 
 const displacementImage = TSL.convertToTexture(TSL.vec2(0.0,0.0),videoObject.videoWidth,videoObject.videoHeight);
 
-const subset_size = 25
 const blurFcn = (tex,sz) => {return blur(tex,sz);}//{return gaussianBlur(tex,null,sz);}
-const detHessBias = TSL.uniform(-15)
-const jacImage = blurFcn(gradImage.mul(diffImage),subset_size);
+const detHessBias = TSL.uniform(PARAMS.DIC.detHessBias);
+const jacImage = blurFcn(gradImage.mul(diffImage),PARAMS.DIC.subsetSize);
 const hessImage = blurFcn(TSL.vec3(
                                 gradImage.x.pow(2),
                                 gradImage.y.pow(2),
                                 gradImage.x.mul(gradImage.y)
-                            ),subset_size);
+                            ),PARAMS.DIC.subsetSize);
 const detHessImage = hessImage.x.mul(hessImage.y).sub(hessImage.z.mul(hessImage.z)).add(detHessBias.exp());
 const invHessImage = TSL.vec3(
                             hessImage.y,
@@ -245,9 +248,138 @@ const invHessImage = TSL.vec3(
 const flowImage = TSL.vec2(
                         invHessImage.x.mul(jacImage.x).add(invHessImage.z.mul(jacImage.y)),
                         invHessImage.z.mul(jacImage.x).add(invHessImage.y.mul(jacImage.y))
-                    ).div(1.0);
+                    ).negate();
 const clrFlowImage = TSL.vec4(vec2rgb(flowImage),detHessImage.div(detHessBias.exp()).saturate().div(2));
 const blendFlowImage = TSL.blendColor(currentImage.rgb,clrFlowImage) ;
+
+
+
+// ----------------------------------------------------------------------
+// TRACKING VIZUALIZATION
+// ----------------------------------------------------------------------
+
+// const gridStep = 0.05;
+// const videoResolution = TSL.vec2( videoObject.videoWidth, videoObject.videoHeight );
+// const gridDimCount = Math.floor(2.0/gridStep);
+// const gridTotalCount = gridDimCount**2
+
+// const count = gridTotalCount
+// const material = new THREE.SpriteNodeMaterial();// { blending: THREE.AdditiveBlending, depthWrite: false } );
+// const positionBuffer = TSL.instancedArray( count, 'vec2' );
+// const refPositionBuffer = TSL.instancedArray( count, 'vec2' );
+// const colorBuffer = TSL.instancedArray( count, 'vec4' );
+
+// material.colorNode = colorBuffer.toAttribute();
+// material.scaleNode = TSL.float(10.0);
+// material.scaleAttenuation = false;
+// const geometry = new THREE.PlaneGeometry( 1, 1 );
+// const mesh = new THREE.InstancedMesh( geometry, material, count );
+// scene.add( mesh );
+
+// const computeInit = TSL.Fn( () => { // the compute shader
+//     // compute position data
+//     const idx = TSL.instanceIndex.toFloat();
+//     const igrid = TSL.mod(idx,gridDimCount);
+//     const jgrid = TSL.floor(idx.div(gridDimCount));
+//     const pos = TSL.vec2(jgrid, igrid).mul(gridStep).sub(1.0).add(gridStep/2.0).mul(videoResolution);
+//     positionBuffer.element( TSL.instanceIndex ).assign(pos);
+//     refPositionBuffer.element( TSL.instanceIndex ).assign(pos);
+//     // color data
+//     colorBuffer.element( TSL.instanceIndex ).assign( TSL.vec4(1,1,1,1) );
+// } )().compute(count);
+
+// renderer.computeAsync( computeInit );
+
+// const flowTexture = TSL.convertToTexture(flowImage,videoObject.videoWidth,videoObject.videoHeight);
+// const computeUpdate = TSL.Fn( () => { // the compute shader
+//     // compute position data
+//     // const refpos = refPositionBuffer.element( TSL.instanceIndex );
+//     // const uuvv = (refpos/videoResolution).xy;
+//     // const du = TSL.texture(currentImage,TSL.uv()).mul(1.0) ;
+//     // const pos = refpos + TSL.texture(flowTexture,uv.xy).xy.mul(10.0) ;
+//     // positionBuffer.element( TSL.instanceIndex ).assign(pos);
+//     // color data
+//     colorBuffer.element( TSL.instanceIndex ).assign( TSL.vec4(TSL.instanceIndex.div(count),1,1,1) );
+// } )().compute(count);
+
+// material.colorNode = TSL.Fn( () => {
+
+//     const refpos = refPositionBuffer.toAttribute();
+//     const uuvv = refpos.div(videoResolution).xy;
+//     const du = TSL.texture(flowTexture,uuvv);
+//     // const velocity = velocityBuffer.toAttribute();
+//     // const speed = velocity.length();
+//     // const colorMix = speed.div( maxSpeed ).smoothstep( 0, 0.5 );
+//     // const finalColor = mix( colorA, colorB, colorMix );
+
+//     return TSL.vec4( du.x,du.y,1, 1 );
+
+// } )();
+
+// material.positionNode = TSL.Fn( () => {
+
+//     const refpos = refPositionBuffer.toAttribute();
+//     const uv = refpos.div(videoResolution).xy;
+//     const du = TSL.texture(flowTexture,uv);
+//     // const velocity = velocityBuffer.toAttribute();
+//     // const speed = velocity.length();
+//     // const colorMix = speed.div( maxSpeed ).smoothstep( 0, 0.5 );
+//     // const finalColor = mix( colorA, colorB, colorMix );
+
+//     return refpos.add( du.mul(10.0) );
+
+// } )();
+
+//     computeUpdate = TSL.Fn( () => { // the compute shader
+//         const uv0_ref = refPositionBuffer.element( TSL.instanceIndex ).mul(0.5).add(0.5);
+//         const position = positionBuffer.element( TSL.instanceIndex );
+//         const displacement = TSL.vec2(0.0,0.0).toVar();
+//         const clr = TSL.vec4(0.0,0.0,0.0,0.5).toVar();
+//         TSL.Loop( N_ITERATIONS , (i) => {
+//             // iterative LK
+//             // compute flow at current position
+//             const uv0_cur = position.add(displacement).mul(0.5).add(0.5);
+//             const A = TSL.vec3(0.0,0.0,0.0).toVar(); // [Axx, Ayy, Axy]
+//             const b = TSL.vec2(0.0,0.0).toVar(); // [bx, by]
+//             TSL.Loop({start:-SUBSET_HALF_SIZE, end:SUBSET_HALF_SIZE}, (sx) => {
+//                 TSL.Loop({start:-SUBSET_HALF_SIZE, end:SUBSET_HALF_SIZE}, (sy) => {
+//                     const offset = TSL.vec2([TSL.float(sx), TSL.float(sy)]).div( videoResolution );
+//                     const uv_ref = uv0_ref.add(offset);
+//                     const uv_cur = uv0_cur.add(offset);
+//                     const ref = TSL.texture( refTexture, uv_ref ).rgb.toVec3();
+//                     const cur = TSL.texture( videoTexture, uv_cur ).rgb.toVec3();
+//                     const diff = cur.sub(ref);
+//                     const dfdx = TSL.texture( videoTexture, uv_cur.add( TSL.vec2(1.0,0.0).div(videoResolution)) ).rgb.toVec3().sub( cur );
+//                     const dfdy = TSL.texture( videoTexture, uv_cur.add( TSL.vec2(0.0,1.0).div(videoResolution)) ).rgb.toVec3().sub( cur );
+//                     b.x.addAssign( diff.mul(dfdx).dot(TSL.vec3(1.0,1.0,1.0)) );
+//                     b.y.addAssign( diff.mul(dfdy).dot(TSL.vec3(1.0,1.0,1.0)) );
+//                     A.x.addAssign( dfdx.mul(dfdx).dot(TSL.vec3(1.0,1.0,1.0)) );
+//                     A.y.addAssign( dfdy.mul(dfdy).dot(TSL.vec3(1.0,1.0,1.0)) );
+//                     A.z.addAssign( dfdx.mul(dfdy).dot(TSL.vec3(1.0,1.0,1.0)) );
+//                     clr.rgb.addAssign( diff.abs().div((2.0*SUBSET_HALF_SIZE+1.0)**2.0) );
+//                 } );
+//             } );
+//             const detA = A.x.mul(A.y).sub( A.z.mul(A.z) );  
+//             const invA = TSL.vec3( A.y, A.x, A.z.negate()).div( detA );
+//             const flow = TSL.vec2(
+//                 invA.x.mul(b.x).add( invA.z.mul(b.y) ),
+//                 invA.z.mul(b.x).add( invA.y.mul(b.y) )
+//             ).negate().div(videoResolution);
+//             displacement.addAssign(flow.mul(.5));
+//         } );
+//         position.addAssign(displacement);
+//         colorBuffer.element( TSL.instanceIndex ).assign(clr)
+//     } )().compute(count);
+
+//     DICInitialized = true;
+// }
+
+// const resetDIC = () => {
+//     renderer.computeAsync( computeInit );
+//     refTexture.copy(videoTexture);
+// }
+
+
 
 
 // ----------------------------------------------------------------------
@@ -418,9 +550,9 @@ async function animate() {
         // console.log("VFPS:", vfps);
         lastTime = time;
 
-        renderer.render(scene, camera);
-
         setCurrentImage()
+
+        renderer.render(scene, camera);
 
         if (PARAMS.autoUpdateReferenceImage) setReferenceImage() ;
 
